@@ -4,19 +4,26 @@
 $script = <<-SCRIPT
 apt-get install -y vim tree net-tools build-essential
 apt-get install -y libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev zlib1g-dev
+
+#python3
 cd /opt
 wget https://www.python.org/ftp/python/3.7.4/Python-3.7.4.tgz
 tar xzf Python-3.7.4.tgz
 cd Python-3.7.4
-sudo ./configure --enable-optimizations
-sudo make altinstall
+./configure --enable-optimizations
+make altinstall
 curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 python3.7 get-pip.py
 
 #gcloud
 echo "deb http://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
 curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
-apt-get update && sudo apt-get install google-cloud-sdk -y
+apt-get update && apt-get install google-cloud-sdk -y
+
+#kubectl
+apt-get install -y apt-transport-https
+echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee -a /etc/apt/sources.list.d/kubernetes.list
+apt-get update && apt-get install -y kubectl
 
 #aws
 pip3 install awscli --upgrade
@@ -25,11 +32,37 @@ pip3 install awscli --upgrade
 curl -L https://git.io/get_helm.sh | bash
 SCRIPT
 
+$alias = <<-SCRIPT
+cat <<EOF >> /home/vagrant/.bashrc
+
+source <(curl -s -S https://raw.githubusercontent.com/google-cloud-sdk/google-cloud-sdk/master/completion.bash.inc > /dev/null)
+source <(kubectl completion bash)
+source <(helm completion bash)
+EOF
+echo 'complete -C $(which aws_completer) aws' >> /home/vagrant/.bashrc
+
+echo '#### POSTGRESQL' >> /home/vagrant/.bash_aliases
+echo 'POSTGRES_VERSION=10-alpine' >> /home/vagrant/.bash_aliases
+echo 'alias psql="docker run --rm -it --network host -v /tmp:/tmp postgres:$POSTGRES_VERSION psql"' >> /home/vagrant/.bash_aliases
+echo 'alias pg_dump="docker run --rm -it --network host -v /tmp:/tmp postgres:$POSTGRES_VERSION pg_dump"' >> /home/vagrant/.bash_aliases
+
+echo '#### MYSQL' >> /home/vagrant/.bash_aliases
+echo 'MYSQL_VERSION=latest' >> /home/vagrant/.bash_aliases
+echo 'alias mysql="docker run --rm -it --network host mysql:$MYSQL_VERSION mysql"' >> /home/vagrant/.bash_aliases
+
+echo '#### CONSUL' >> /home/vagrant/.bash_aliases
+echo 'CONSUL_VERSION=latest' >> /home/vagrant/.bash_aliases
+echo 'alias consul="docker run --rm -it --network host consul:$CONSUL_VERSION consul"' >> /home/vagrant/.bash_aliases
+
+chown vagrant:vagrant /home/vagrant/.bash_aliases
+SCRIPT
+
 $docker = <<-SCRIPT
+mkdir -p /etc/systemd/system/docker.service.d
 cat > /etc/systemd/system/docker.service.d/override.conf <<EOF
 [Service]
 ExecStart=
-ExecStart=/usr/bin/dockerd -H fd:// -H tcp://127.0.0.1:2375
+ExecStart=/usr/bin/dockerd -H fd:// -H tcp://0.0.0.0:2375
 EOF
 systemctl daemon-reload
 systemctl restart docker
@@ -111,4 +144,5 @@ Vagrant.configure("2") do |config|
     d.post_install_provision "shell", inline: $docker
   end
   config.vm.provision "shell", inline: $script
+  config.vm.provision "shell", inline: $alias
 end
